@@ -99,6 +99,12 @@ export const LocationProvider: React.FC<{ children: ReactNode }> = ({ children }
       if (!res.ok) {
         let detail = 'Live data temporarily unavailable';
         try { const j = await res.json(); detail = j.detail || detail; } catch { /* skip */ }
+        // Translate raw HTTP error codes into user-friendly messages
+        if (res.status === 429 || detail.includes('429') || detail.toLowerCase().includes('rate-limit')) {
+          detail = 'Too many requests — please wait a moment and try again.';
+        } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+          detail = 'Location service temporarily unavailable. Try again shortly.';
+        }
         setError(detail);
         return;
       }

@@ -64,7 +64,7 @@ class TTLCache:
 
 _cache = TTLCache()
 
-GEO_TTL     = 3600   # 1 hour  – location rarely changes
+GEO_TTL     = 86400  # 24 hours — city coordinates never change
 WEATHER_TTL = 600    # 10 min
 AQI_TTL     = 600    # 10 min
 TRAFFIC_TTL = 300    # 5 min
@@ -139,20 +139,71 @@ async def geocode(query: str) -> LocationInfo:
     if cached:
         return cached
 
+    # ── Built-in fallback for popular Indian cities ──────────────────────────
+    # Avoids hitting Nominatim at all for the most common searches,
+    # eliminating 429s for the default/suggested cities.
+    _CITY_FALLBACKS: Dict[str, Dict] = {
+        "kolkata":   {"city": "Kolkata",   "state": "West Bengal",     "country": "India", "lat": 22.5726, "lng": 88.3639},
+        "delhi":     {"city": "Delhi",     "state": "Delhi",           "country": "India", "lat": 28.6139, "lng": 77.2090},
+        "mumbai":    {"city": "Mumbai",    "state": "Maharashtra",     "country": "India", "lat": 19.0760, "lng": 72.8777},
+        "bengaluru": {"city": "Bengaluru", "state": "Karnataka",       "country": "India", "lat": 12.9716, "lng": 77.5946},
+        "bangalore": {"city": "Bengaluru", "state": "Karnataka",       "country": "India", "lat": 12.9716, "lng": 77.5946},
+        "chennai":   {"city": "Chennai",   "state": "Tamil Nadu",      "country": "India", "lat": 13.0827, "lng": 80.2707},
+        "hyderabad": {"city": "Hyderabad", "state": "Telangana",       "country": "India", "lat": 17.3850, "lng": 78.4867},
+        "pune":      {"city": "Pune",      "state": "Maharashtra",     "country": "India", "lat": 18.5204, "lng": 73.8567},
+        "ahmedabad": {"city": "Ahmedabad", "state": "Gujarat",         "country": "India", "lat": 23.0225, "lng": 72.5714},
+        "jaipur":    {"city": "Jaipur",    "state": "Rajasthan",       "country": "India", "lat": 26.9124, "lng": 75.7873},
+        "surat":     {"city": "Surat",     "state": "Gujarat",         "country": "India", "lat": 21.1702, "lng": 72.8311},
+        "lucknow":   {"city": "Lucknow",   "state": "Uttar Pradesh",   "country": "India", "lat": 26.8467, "lng": 80.9462},
+        "kanpur":    {"city": "Kanpur",    "state": "Uttar Pradesh",   "country": "India", "lat": 26.4499, "lng": 80.3319},
+        "nagpur":    {"city": "Nagpur",    "state": "Maharashtra",     "country": "India", "lat": 21.1458, "lng": 79.0882},
+        "patna":     {"city": "Patna",     "state": "Bihar",           "country": "India", "lat": 25.5941, "lng": 85.1376},
+        "bhopal":    {"city": "Bhopal",    "state": "Madhya Pradesh",  "country": "India", "lat": 23.2599, "lng": 77.4126},
+    }
+    q_lower = query.lower().strip()
+    if q_lower in _CITY_FALLBACKS:
+        f = _CITY_FALLBACKS[q_lower]
+        info = LocationInfo(
+            city=f["city"], state=f["state"], country=f["country"],
+            lat=f["lat"], lng=f["lng"],
+            display_name=f"{f['city']}, {f['state']}, {f['country']}",
+        )
+        _cache.set(cache_key, info)
+        return info
+
+    # ── Live Nominatim lookup with 429 / error handling ──────────────────────
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
 
-    async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, headers=HEADERS) as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            results = resp.json()
-        except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="Geocoding service timed out")
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(status_code=502, detail=f"Geocoding service error: {e.response.status_code}")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Geocoding failed: {str(e)}")
+    last_exc: Exception = Exception("Geocoding failed")
+    for attempt in range(3):          # up to 3 attempts with back-off
+        if attempt:
+            await asyncio.sleep(1.5 * attempt)   # 1.5 s, 3.0 s
+        async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, headers=HEADERS) as client:
+            try:
+                resp = await client.get(url, params=params)
+                if resp.status_code == 429:
+                    last_exc = HTTPException(
+                        status_code=429,
+                        detail="Geocoding rate-limited (429). Try again in a moment.",
+                    )
+                    continue            # retry after back-off
+                resp.raise_for_status()
+                results = resp.json()
+                break                  # success
+            except HTTPException:
+                raise
+            except httpx.TimeoutException:
+                last_exc = HTTPException(status_code=504, detail="Geocoding service timed out")
+                continue
+            except httpx.HTTPStatusError as e:
+                last_exc = HTTPException(status_code=502, detail=f"Geocoding service error: {e.response.status_code}")
+                break
+            except Exception as e:
+                last_exc = HTTPException(status_code=502, detail=f"Geocoding failed: {str(e)}")
+                break
+    else:
+        raise last_exc  # all attempts exhausted
 
     if not results:
         raise HTTPException(status_code=404, detail=f"Location not found: '{query}'")
