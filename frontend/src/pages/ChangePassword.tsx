@@ -4,7 +4,7 @@ import { FiLock, FiEye, FiEyeOff, FiAlertCircle, FiCheckCircle } from 'react-ico
 import { useAuth } from '../contexts/AuthContext';
 
 const ChangePassword: React.FC = () => {
-  const { token } = useAuth();
+  const { authFetch } = useAuth();
   const [formData, setFormData] = useState({
     old_password: '',
     new_password: '',
@@ -58,12 +58,9 @@ const ChangePassword: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/auth/change-password', {
+      const response = await authFetch('/api/auth/change-password', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           old_password: formData.old_password,
           new_password: formData.new_password,

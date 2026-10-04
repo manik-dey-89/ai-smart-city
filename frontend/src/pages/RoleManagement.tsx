@@ -19,7 +19,7 @@ interface Permission {
 }
 
 const RoleManagement: React.FC = () => {
-  const { token } = useAuth();
+  const { authFetch } = useAuth();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,12 +37,8 @@ const RoleManagement: React.FC = () => {
   const fetchRoles = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/roles/', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      const response = await authFetch('/api/roles/');
       if (!response.ok) throw new Error('Failed to fetch roles');
-
       const data = await response.json();
       setRoles(data);
     } catch (err) {
@@ -54,12 +50,8 @@ const RoleManagement: React.FC = () => {
 
   const fetchPermissions = async () => {
     try {
-      const response = await fetch('/api/permissions/', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      const response = await authFetch('/api/permissions/');
       if (!response.ok) throw new Error('Failed to fetch permissions');
-
       const data = await response.json();
       setPermissions(data);
     } catch (err) {
@@ -69,15 +61,9 @@ const RoleManagement: React.FC = () => {
 
   const handleDelete = async (roleId: string) => {
     if (!confirm('Are you sure you want to delete this role?')) return;
-
     try {
-      const response = await fetch(`/api/roles/${roleId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
+      const response = await authFetch(`/api/roles/${roleId}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete role');
-
       setMessage({ type: 'success', text: 'Role deleted successfully' });
       fetchRoles();
     } catch (err) {
@@ -218,7 +204,7 @@ const RoleManagement: React.FC = () => {
             fetchRoles();
             setMessage({ type: 'success', text: 'Role created successfully' });
           }}
-          token={token}
+          authFetch={authFetch}
           availablePermissions={permissions}
         />
       )}
@@ -232,7 +218,7 @@ const RoleManagement: React.FC = () => {
             fetchRoles();
             setMessage({ type: 'success', text: 'Role updated successfully' });
           }}
-          token={token}
+          authFetch={authFetch}
           availablePermissions={permissions}
         />
       )}
@@ -243,9 +229,9 @@ const RoleManagement: React.FC = () => {
 const CreateRoleModal: React.FC<{
   onClose: () => void;
   onSuccess: () => void;
-  token: string | null;
+  authFetch: (url: string, options?: RequestInit) => Promise<Response>;
   availablePermissions: Permission[];
-}> = ({ onClose, onSuccess, token, availablePermissions }) => {
+}> = ({ onClose, onSuccess, authFetch, availablePermissions }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -261,12 +247,9 @@ const CreateRoleModal: React.FC<{
     setError('');
 
     try {
-      const response = await fetch('/api/roles/', {
+      const response = await authFetch('/api/roles/', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
@@ -279,10 +262,7 @@ const CreateRoleModal: React.FC<{
 
       // Assign permissions
       for (const permId of selectedPermissions) {
-        await fetch(`/api/roles/${role.id}/permissions/${permId}`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        await authFetch(`/api/roles/${role.id}/permissions/${permId}`, { method: 'POST' });
       }
 
       onSuccess();
@@ -402,9 +382,9 @@ const EditRoleModal: React.FC<{
   role: Role;
   onClose: () => void;
   onSuccess: () => void;
-  token: string | null;
+  authFetch: (url: string, options?: RequestInit) => Promise<Response>;
   availablePermissions: Permission[];
-}> = ({ role, onClose, onSuccess, token, availablePermissions }) => {
+}> = ({ role, onClose, onSuccess, authFetch, availablePermissions }) => {
   const [formData, setFormData] = useState({
     name: role.name,
     description: role.description || '',
@@ -422,12 +402,9 @@ const EditRoleModal: React.FC<{
     setError('');
 
     try {
-      const response = await fetch(`/api/roles/${role.id}`, {
+      const response = await authFetch(`/api/roles/${role.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
@@ -437,29 +414,21 @@ const EditRoleModal: React.FC<{
       }
 
       // Get current role permissions
-      const currentPerms = await fetch(`/api/roles/${role.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const currentPerms = await authFetch(`/api/roles/${role.id}`);
       const currentRole = await currentPerms.json();
       const currentPermIds = currentRole.permissions?.map((p: Permission) => p.id) || [];
 
       // Remove unselected permissions
       for (const permId of currentPermIds) {
         if (!selectedPermissions.includes(permId)) {
-          await fetch(`/api/roles/${role.id}/permissions/${permId}`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          await authFetch(`/api/roles/${role.id}/permissions/${permId}`, { method: 'DELETE' });
         }
       }
 
       // Add new permissions
       for (const permId of selectedPermissions) {
         if (!currentPermIds.includes(permId)) {
-          await fetch(`/api/roles/${role.id}/permissions/${permId}`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          await authFetch(`/api/roles/${role.id}/permissions/${permId}`, { method: 'POST' });
         }
       }
 

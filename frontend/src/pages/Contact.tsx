@@ -8,6 +8,10 @@ import {
 import PublicNavbar from '../components/PublicNavbar'
 import PublicFooter from '../components/PublicFooter'
 
+// Public page — no auth context available, resolve backend origin directly.
+const _raw = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') || '';
+const PUBLIC_API = _raw ? `${_raw}/api` : '/api';
+
 /* ── Types ──────────────────────────────────────────────────── */
 interface FormState {
   name: string
@@ -103,7 +107,7 @@ export default function Contact() {
 
     setSubmitting(true)
     try {
-      const res = await fetch('/api/contact', {
+      const res = await fetch(`${PUBLIC_API}/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
