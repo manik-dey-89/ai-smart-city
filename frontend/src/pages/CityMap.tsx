@@ -314,7 +314,7 @@ const CityMap: React.FC = () => {
 
   /* ── Core fetch logic ────────────────────────────────────────────────────── */
   const fetchAll = useCallback(async (lat: number, lng: number, activeLayer: string) => {
-    // ── Cancel any in-flight requests from a previous location ──
+    // Cancel previous in-flight requests
     if (p1AbortRef.current) p1AbortRef.current.abort();
     if (p2AbortRef.current) p2AbortRef.current.abort();
 
@@ -332,7 +332,7 @@ const CityMap: React.FC = () => {
     setOsmLoaded(false);
 
     // ═══════════════════════════════════════════════════════════════
-    // PHASE 1 — DB markers only (instant, no Overpass)
+    // PHASE 1 — DB markers (instant, no Overpass)
     // ═══════════════════════════════════════════════════════════════
     setPhase1Loading(true);
     try {
@@ -340,79 +340,83 @@ const CityMap: React.FC = () => {
         `/api/map/db-markers?layer=${activeLayer}&lat=${lat}&lng=${lng}&radius=6000`,
         { signal: p1Ctrl.signal }
       );
-      if (p1Seq !== p1SeqRef.current) return;   // superseded
+      if (p1Seq !== p1SeqRef.current) return;
       if (r.ok) {
         const data = await r.json();
-        const dbMarkers: MapMarker[] = data.markers || [];
-        // Replace existing markers with fresh DB markers immediately
-        setMarkers(dbMarkers);
+        setMarkers(data.markers || []);
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
-      // Phase 1 failure is non-fatal — phase 2 will still run
     } finally {
       if (p1Seq === p1SeqRef.current) setPhase1Loading(false);
     }
 
+    if (p2Seq !== p2SeqRef.current) return;
+
     // ═══════════════════════════════════════════════════════════════
-    // PHASE 2 — Full markers (DB + Overpass OSM facilities)
+    // PHASE 2 — OSM facilities
+    // Strategy: race backend (fast when cached) against a 3 s timeout.
+    // If backend wins with data → use it.
+    // Otherwise → query Overpass directly from the browser.
+    // This eliminates the 20-25 s wait when Render's server IPs are
+    // blocked/rate-limited by Overpass.
     // ═══════════════════════════════════════════════════════════════
     setPhase2Loading(true);
     try {
-      const r = await authFetch(
-        `/api/map/markers?layer=${activeLayer}&lat=${lat}&lng=${lng}&radius=6000`,
-        { signal: p2Ctrl.signal }
-      );
-      if (p2Seq !== p2SeqRef.current) return;   // superseded
-      if (!r.ok) {
-        setError('Could not load OSM facilities. DB data is shown above.');
-        return;
-      }
-      const data = await r.json();
-      const fullMarkers: MapMarker[] = data.markers || [];
+      // Try backend with a hard 3-second cap
+      let backendMarkers: MapMarker[] = [];
+      try {
+        const backendTimeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 3000));
+        const backendFetch = authFetch(
+          `/api/map/markers?layer=${activeLayer}&lat=${lat}&lng=${lng}&radius=6000`,
+          { signal: p2Ctrl.signal }
+        ).then(async r => {
+          if (!r.ok) return [];
+          const d = await r.json();
+          return (d.markers || []) as MapMarker[];
+        }).catch(() => []);
+
+        const result = await Promise.race([backendFetch, backendTimeout]);
+        if (p2Seq !== p2SeqRef.current) return;
+        backendMarkers = result ?? [];
+      } catch { /* backend timed out or failed — fall through */ }
 
       if (p2Seq !== p2SeqRef.current) return;
 
-      if (fullMarkers.length > 0) {
-        // Backend returned OSM data — use it
-        setMarkers(fullMarkers);
+      if (backendMarkers.length > 0) {
+        // Backend cache hit — fast path
+        setMarkers(backendMarkers);
         setOsmLoaded(true);
-        setError('');
       } else {
-        // Backend returned 0 OSM markers (Overpass timeout/blocked on server).
-        // Fall back to querying Overpass directly from the browser.
+        // Backend slow/blocked — query Overpass directly from browser
         try {
           const directMarkers = await fetchOverpassDirect(lat, lng, activeLayer);
           if (p2Seq !== p2SeqRef.current) return;
-          if (directMarkers.length > 0) {
-            // Merge direct Overpass results with any DB markers already shown
-            setMarkers(prev => {
-              const dbOnly = prev.filter(m =>
-                m.id.startsWith('em-') || m.id.startsWith('cmp-') || m.id.startsWith('ti-')
-              );
-              const seen = new Set(dbOnly.map(m => m.id));
-              const merged = [...dbOnly];
-              for (const m of directMarkers) {
-                if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); }
-              }
-              return merged;
-            });
-          }
+          setMarkers(prev => {
+            // Keep DB markers (complaints, SOS, traffic), add OSM on top
+            const dbOnly = prev.filter(m =>
+              m.id.startsWith('em-') || m.id.startsWith('cmp-') || m.id.startsWith('ti-')
+            );
+            const seen = new Set(dbOnly.map(m => m.id));
+            const merged = [...dbOnly];
+            for (const m of directMarkers) {
+              if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); }
+            }
+            return merged;
+          });
           setOsmLoaded(true);
-          setError('');
         } catch {
-          setOsmLoaded(true); // still show whatever DB markers we have
+          setOsmLoaded(true);
         }
       }
+      setError('');
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
-      if (p2Seq === p2SeqRef.current) {
-        setError('OSM data unavailable — showing local data only.');
-      }
+      if (p2Seq === p2SeqRef.current) setError('OSM data unavailable — showing local data only.');
     } finally {
       if (p2Seq === p2SeqRef.current) setPhase2Loading(false);
     }
-  }, [authFetch]);
+  }, [authFetch, fetchOverpassDirect]);
 
   // Debounced trigger on location / layer change
   useEffect(() => {
