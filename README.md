@@ -1,348 +1,196 @@
-# AI Smart City Dashboard - Database Documentation
+# 🏙️ AI Smart City Dashboard
 
-## Overview
+A full-stack, role-based smart city management platform built with **React + TypeScript** (frontend) and **FastAPI + SQLAlchemy** (backend).
 
-This document describes the complete database architecture for the AI Smart City Dashboard. The database is built on PostgreSQL with PostGIS for geospatial data, following 3NF normalization standards.
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Database Schema
+---
 
-### Core Tables
+## ✨ Features
 
-#### `users`
-- **Purpose**: Store all system users
-- **Key Fields**:
-  - `id` (UUID, PK)
-  - `username` (String, unique)
-  - `email` (String, unique)
-  - `hashed_password` (String)
-  - `full_name` (String)
-  - `phone` (String)
-  - `is_active` (Boolean)
-  - `created_at` (DateTime)
-  - `updated_at` (DateTime)
-  - `status` (String)
+| Module | Description |
+|--------|-------------|
+| **Dashboard** | Real-time weather, AQI, traffic overview for any city |
+| **City Map** | Live OpenStreetMap with hospitals, police, fire, pharmacies |
+| **Air Quality** | Real AQI data via Open-Meteo Air Quality API |
+| **Traffic** | Congestion index, road segments, incidents |
+| **Weather** | 7-day forecast, hourly data via Open-Meteo |
+| **Water / Flood** | Flood sensor readings and alerts |
+| **Complaints** | Citizen complaint submission, tracking, and admin routing |
+| **Emergency SOS** | One-tap SOS, nearby services (Overpass API), responder dashboard |
+| **Alerts** | Admin creates city-wide alerts; visible on all role panels |
+| **Agriculture** | Crop advisor, market listings, government schemes |
+| **Role Management** | Fine-grained RBAC: citizen, admin, police, fire, emergency |
+| **User Management** | Admin user CRUD, role assignment |
 
-#### `roles`
-- **Purpose**: Define user roles
-- **Key Fields**:
-  - `id` (UUID, PK)
-  - `name` (String, unique)
-  - `description` (Text)
-  - Standard Roles: `citizen`, `admin`, `emergency`
+---
 
-#### `permissions`
-- **Purpose**: Granular permissions for access control
-- **Key Fields**:
-  - `id` (UUID, PK)
-  - `name` (String, unique)
-  - `resource` (String)
-  - `action` (String)
-  - `description` (Text)
+## 🧑‍💻 Tech Stack
 
-#### `user_roles`
-- **Purpose**: Many-to-many link between users and roles
-- **Key Fields**:
-  - `user_id` (UUID, FK → users.id)
-  - `role_id` (UUID, FK → roles.id)
+**Frontend**
+- React 18 + TypeScript
+- Vite, Tailwind CSS, Framer Motion
+- React Leaflet (maps), React Router v6
+- JWT auth + Google OAuth
 
-#### `role_permissions`
-- **Purpose**: Many-to-many link between roles and permissions
-- **Key Fields**:
-  - `role_id` (UUID, FK → roles.id)
-  - `permission_id` (UUID, FK → permissions.id)
+**Backend**
+- FastAPI (Python 3.11)
+- SQLAlchemy ORM + Alembic migrations
+- SQLite (dev/demo) or PostgreSQL (production)
+- Pydantic v2, python-jose, passlib
 
-### User Profile Tables
+**Infrastructure**
+- Docker + Docker Compose
+- nginx (SPA routing + API proxy + gzip)
+- GitHub Actions ready
 
-#### `citizens`
-- **Purpose**: Extended profile for citizen users
-- **Relations**: One-to-one with `users`
-- **Key Fields**:
-  - `user_id` (UUID, FK → users.id, unique)
-  - `address` (Text)
-  - `date_of_birth` (DateTime)
+---
 
-#### `admins`
-- **Purpose**: Extended profile for admin users
-- **Relations**: One-to-one with `users`, Belongs to `departments`
-- **Key Fields**:
-  - `user_id` (UUID, FK → users.id, unique)
-  - `department_id` (UUID, FK → departments.id)
-  - `employee_id` (String, unique)
-  - `position` (String)
-
-#### `emergency_teams`
-- **Purpose**: Extended profile for emergency responders
-- **Relations**: One-to-one with `users`, Belongs to `departments`, Belongs to `emergency_stations`
-- **Key Fields**:
-  - `user_id` (UUID, FK → users.id, unique)
-  - `department_id` (UUID, FK → departments.id)
-  - `station_id` (UUID, FK → emergency_stations.id)
-  - `team_type` (String)
-  - `badge_number` (String, unique)
-
-### Organization Tables
-
-#### `departments`
-- **Purpose**: Organization departments
-- **Relations**: Has many `admins`, Has many `emergency_teams`
-- **Key Fields**:
-  - `name` (String, unique)
-  - `description` (Text)
-  - `head_id` (UUID, FK → users.id)
-
-#### `emergency_stations`
-- **Purpose**: Emergency response stations (police, fire, etc.)
-- **Relations**: Has many `emergency_teams`, Has many `ambulances`, Has many `fire_trucks`, Has many `police_units`
-- **Key Fields**:
-  - `type` (String)
-  - `name` (String)
-  - `location` (Point geometry)
-  - `address` (Text)
-  - `phone` (String)
-  - `capacity` (Integer)
-
-### Sensor & Infrastructure Tables
-
-#### `traffic_sensors`
-- **Purpose**: Traffic monitoring sensors
-- **Relations**: Belongs to `roads`
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `road_id` (UUID, FK → roads.id)
-  - `sensor_type` (String)
-  - `metadata` (Text)
-
-#### `air_quality_sensors`
-- **Purpose**: Air quality monitoring sensors
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `metadata` (Text)
-
-#### `water_sensors`
-- **Purpose**: Water level and quality sensors
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `sensor_type` (String)
-  - `metadata` (Text)
-
-#### `electricity_sensors`
-- **Purpose**: Power grid sensors
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `transformer_id` (String)
-  - `metadata` (Text)
-
-#### `smart_bins`
-- **Purpose**: IoT-enabled waste bins
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `fill_percentage` (Float)
-  - `bin_type` (String)
-  - `last_collected` (DateTime)
-
-#### `weather_stations`
-- **Purpose**: Weather monitoring stations
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `metadata` (Text)
-
-#### `roads`
-- **Purpose**: Road network information
-- **Relations**: Has many `traffic_sensors`, Has many `traffic_incidents`
-- **Key Fields**:
-  - `name` (String)
-  - `road_type` (String)
-  - `geometry` (LineString geometry)
-  - `speed_limit` (Integer)
-  - `lanes` (Integer)
-
-### Incident & Complaint Tables
-
-#### `traffic_incidents`
-- **Purpose**: Traffic-related incidents
-- **Relations**: Belongs to `roads`
-- **Key Fields**:
-  - `type` (String)
-  - `title` (String)
-  - `description` (Text)
-  - `location` (Point geometry)
-  - `road_id` (UUID, FK → roads.id)
-  - `severity` (String)
-
-#### `crime_reports`
-- **Purpose**: Reported crimes
-- **Key Fields**:
-  - `type` (String)
-  - `title` (String)
-  - `description` (Text)
-  - `location` (Point geometry)
-  - `severity` (String)
-  - `reported_by` (UUID, FK → users.id)
-
-#### `complaints`
-- **Purpose**: Citizen complaints
-- **Relations**: Belongs to `users`, Has many `complaint_images`
-- **Key Fields**:
-  - `type` (String)
-  - `title` (String)
-  - `description` (Text)
-  - `location` (Point geometry)
-  - `priority` (String)
-  - `user_id` (UUID, FK → users.id)
-  - `assigned_to` (UUID, FK → users.id)
-
-#### `complaint_images`
-- **Purpose**: Images attached to complaints
-- **Relations**: Belongs to `complaints`
-- **Key Fields**:
-  - `complaint_id` (UUID, FK → complaints.id)
-  - `image_url` (String)
-  - `thumbnail_url` (String)
-
-### Emergency Response Tables
-
-#### `emergency_requests`
-- **Purpose**: Emergency service requests
-- **Relations**: Belongs to `users`
-- **Key Fields**:
-  - `type` (String)
-  - `title` (String)
-  - `description` (Text)
-  - `location` (Point geometry)
-  - `user_id` (UUID, FK → users.id)
-  - `priority` (String)
-  - `is_resolved` (Boolean)
-
-#### `ambulances`
-- **Purpose**: Ambulance fleet management
-- **Relations**: Belongs to `emergency_stations`
-- **Key Fields**:
-  - `name` (String)
-  - `station_id` (UUID, FK → emergency_stations.id)
-  - `current_location` (Point geometry)
-  - `is_available` (Boolean)
-
-#### `fire_trucks`
-- **Purpose**: Fire truck fleet management
-- **Relations**: Belongs to `emergency_stations`
-- **Key Fields**: Same as ambulances
-
-#### `police_units`
-- **Purpose**: Police unit management
-- **Relations**: Belongs to `emergency_stations`
-- **Key Fields**: Same as ambulances
-
-### Facility Tables
-
-#### `hospitals`
-- **Purpose**: Hospital information
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `address` (Text)
-  - `phone` (String)
-  - `available_beds` (Integer)
-  - `total_beds` (Integer)
-  - `emergency_services` (Boolean)
-
-#### `shelters`
-- **Purpose**: Emergency shelter information
-- **Key Fields**:
-  - `name` (String)
-  - `location` (Point geometry)
-  - `address` (Text)
-  - `phone` (String)
-  - `capacity` (Integer)
-  - `current_occupancy` (Integer)
-
-### System Tables
-
-#### `notifications`
-- **Purpose**: User notifications
-- **Relations**: Belongs to `users`
-- **Key Fields**:
-  - `user_id` (UUID, FK → users.id)
-  - `type` (String)
-  - `title` (String)
-  - `message` (Text)
-  - `is_read` (Boolean)
-
-#### `alerts`
-- **Purpose**: Public alerts
-- **Key Fields**:
-  - `type` (String)
-  - `title` (String)
-  - `message` (Text)
-  - `severity` (String)
-  - `area_affected` (Polygon geometry)
-
-#### `analytics`
-- **Purpose**: Metric storage for analytics
-- **Key Fields**:
-  - `metric_name` (String)
-  - `metric_value` (Float)
-  - `category` (String)
-  - `metadata` (Text)
-
-#### `system_logs`
-- **Purpose**: System audit logs
-- **Relations**: Belongs to `users`
-- **Key Fields**:
-  - `level` (String)
-  - `message` (Text)
-  - `source` (String)
-  - `user_id` (UUID, FK → users.id)
-  - `metadata` (Text)
-
-#### `settings`
-- **Purpose**: System configuration settings
-- **Key Fields**:
-  - `key` (String, unique)
-  - `value` (Text)
-  - `description` (Text)
-  - `is_public` (Boolean)
-
-#### `incidents`
-- **Purpose**: General incident tracking
-- **Relations**: Belongs to `users`
-- **Key Fields**:
-  - `type` (String)
-  - `title` (String)
-  - `description` (Text)
-  - `location` (Point geometry)
-  - `severity` (String)
-  - `created_by` (UUID, FK → users.id)
-
-## Geospatial Features
-
-All location-related tables use PostGIS geometry types with SRID 4326 (WGS84):
-- `POINT` - Single location coordinates
-- `LINESTRING` - Road and linear feature geometry
-- `POLYGON` - Area definitions (e.g., alert affected areas)
-
-## Usage
-
-### Starting the Database with Docker
+## 🚀 Quick Start (Docker)
 
 ```bash
-docker-compose up -d db
+# 1. Clone the repo
+git clone https://github.com/manik-dey-89/ai-smart-city.git
+cd ai-smart-city
+
+# 2. Create backend env file
+cp backend/.env.example backend/.env
+# Edit backend/.env — set a strong SECRET_KEY at minimum
+
+# 3. Build and start all services
+docker compose up --build -d
+
+# 4. Open in browser
+#   Frontend: http://localhost:3000
+#   API docs: http://localhost:8000/docs
+#   Health:   http://localhost:8000/api/health
 ```
 
-### Seeding Test Data
+To seed an initial admin user:
+```bash
+docker compose exec backend python seed_auth.py
+```
+
+---
+
+## 💻 Local Development (without Docker)
+
+### Backend
 
 ```bash
 cd backend
-python seed.py
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+cp .env.example .env   # edit SECRET_KEY etc.
+
+uvicorn main:app --reload --port 8000
+# API docs: http://localhost:8000/docs
 ```
 
-### Connecting to the Database
+### Frontend
 
 ```bash
-psql postgresql://smartcity:smartcity123@localhost:5432/smartcity
+cd frontend
+npm install
+cp .env.local.example .env.local  # add VITE_GOOGLE_CLIENT_ID if using Google OAuth
+
+npm run dev
+# App: http://localhost:3000
 ```
+
+---
+
+## 🔑 Default Roles
+
+| Role | Access |
+|------|--------|
+| `citizen` | Dashboard, Map, Weather, AQI, Traffic, Water, Complaints, Emergency |
+| `city_admin` / `admin` | All citizen views + Admin panel, Alerts, User/Role management |
+| `police` | Dashboard, Map, Traffic, Emergency, Assigned Cases |
+| `fire_service` | Dashboard, Map, Traffic, Emergency, Assigned Cases |
+| `emergency` | Dashboard, Map, Traffic, Emergency, Assigned Cases |
+
+---
+
+## 🌍 Deploy to the Cloud
+
+See **[DEPLOY.md](DEPLOY.md)** for step-by-step guides for:
+- Docker Compose (any VPS)
+- Render.com (free tier)
+- Railway
+- Ubuntu VPS with nginx + systemd
+
+---
+
+## ⚙️ Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | ✅ | `sqlite:///./smartcity.db` | SQLite or Postgres connection string |
+| `SECRET_KEY` | ✅ | — | JWT signing key — generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `BACKEND_CORS_ORIGINS` | ✅ | `["*"]` | Comma-separated allowed origins, e.g. `https://myapp.com` |
+| `GOOGLE_CLIENT_ID` | optional | — | Google OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | optional | — | Google OAuth Client Secret |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | optional | `30` | JWT access token TTL |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | optional | `7` | JWT refresh token TTL |
+
+### Frontend (build-time)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_GOOGLE_CLIENT_ID` | optional | Same Google OAuth Client ID as backend |
+
+---
+
+## 📁 Project Structure
+
+```
+ai-smart-city/
+├── backend/
+│   ├── app/
+│   │   ├── routers/        # FastAPI route handlers
+│   │   ├── models.py       # SQLAlchemy ORM models
+│   │   ├── schemas.py      # Pydantic request/response schemas
+│   │   ├── dependencies.py # Auth dependencies (JWT, RBAC)
+│   │   ├── security.py     # Password hashing, token logic
+│   │   └── config.py       # Settings via pydantic-settings
+│   ├── alembic/            # DB migrations
+│   ├── main.py             # App entry point
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── pages/          # Route-level page components
+│   │   ├── components/     # Shared UI components (Layout, AlertBanner)
+│   │   ├── contexts/       # AuthContext, LocationContext
+│   │   ├── hooks/          # useRBAC, useGoogleAuth
+│   │   └── App.tsx         # Router setup
+│   ├── public/             # Static assets (illustrations, backgrounds)
+│   ├── nginx.conf          # Production nginx config
+│   └── Dockerfile
+├── docker-compose.yml      # Full-stack orchestration
+├── DEPLOY.md               # Detailed deployment guide
+└── README.md
+```
+
+---
+
+## 🔒 Security Notes
+
+- `SECRET_KEY` in `docker-compose.yml` is a placeholder — **always override it** in production via `backend/.env` or environment variables.
+- `backend/.env` and `frontend/.env.local` are gitignored — never commit real credentials.
+- The backend Dockerfile runs as a non-root user (`appuser`).
+- nginx sends `X-Frame-Options`, `X-Content-Type-Options`, and `X-XSS-Protection` headers on every response.
+- `5432` (Postgres) is exposed in docker-compose for local tooling — remove the `ports:` mapping in production.
+
+---
+
+## 📄 License
+
+MIT © 2025 Manik Dey

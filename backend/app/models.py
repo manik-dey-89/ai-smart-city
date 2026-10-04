@@ -451,9 +451,11 @@ class Alert(Base, BaseMixin):
     type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
-    severity = Column(String, default="info")
+    severity = Column(String, default="medium")
+    status = Column(String, default="active")          # active | inactive
     area_lat = Column(Float)
     area_lng = Column(Float)
+    created_by = Column(String, nullable=True)         # user id of creator
 
 
 class Analytics(Base, BaseMixin):
