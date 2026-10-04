@@ -40,7 +40,6 @@ interface MapMarker {
 
 /* ── Marker config ───────────────────────────────────────────────────────────── */
 const MARKER_CONFIG: Record<string, { color: string; emoji: string; label: string; layer: string }> = {
-  // Emergency & medical
   hospital:           { color: '#ef4444', emoji: '🏥', label: 'Hospital',           layer: 'emergency' },
   clinic:             { color: '#f87171', emoji: '🏥', label: 'Clinic',             layer: 'emergency' },
   pharmacy:           { color: '#22c55e', emoji: '💊', label: 'Pharmacy',           layer: 'emergency' },
@@ -51,13 +50,11 @@ const MARKER_CONFIG: Record<string, { color: string; emoji: string; label: strin
   complaint_crime:    { color: '#7c3aed', emoji: '⚖️', label: 'Crime Report',       layer: 'emergency' },
   complaint_fire:     { color: '#ea580c', emoji: '🔥', label: 'Fire Complaint',     layer: 'emergency' },
   complaint_medical:  { color: '#e11d48', emoji: '🚑', label: 'Medical Complaint',  layer: 'emergency' },
-  // Transport & traffic
   fuel:               { color: '#eab308', emoji: '⛽', label: 'Fuel Station',       layer: 'traffic'   },
   bus_stop:           { color: '#84cc16', emoji: '🚌', label: 'Bus Station',        layer: 'traffic'   },
   parking:            { color: '#64748b', emoji: '🅿', label: 'Parking',            layer: 'traffic'   },
   traffic_incident:   { color: '#fbbf24', emoji: '🚧', label: 'Traffic Incident',   layer: 'traffic'   },
   complaint_traffic:  { color: '#f59e0b', emoji: '🛣',  label: 'Road Complaint',    layer: 'traffic'   },
-  // Services & sensors
   bank:               { color: '#0ea5e9', emoji: '🏦', label: 'Bank',               layer: 'sensors'   },
   atm:                { color: '#38bdf8', emoji: '🏧', label: 'ATM',               layer: 'sensors'   },
   supermarket:        { color: '#a78bfa', emoji: '🛒', label: 'Supermarket',        layer: 'sensors'   },
@@ -71,7 +68,8 @@ const MARKER_CONFIG: Record<string, { color: string; emoji: string; label: strin
   place:              { color: '#6b7280', emoji: '📍', label: 'Place',              layer: 'sensors'   },
 };
 
-const getConfig = (type: string) => MARKER_CONFIG[type] ?? { color: '#6b7280', emoji: '📍', label: type, layer: 'sensors' };
+const getConfig = (type: string) =>
+  MARKER_CONFIG[type] ?? { color: '#6b7280', emoji: '📍', label: type, layer: 'sensors' };
 
 const makeIcon = (type: string) => {
   const cfg = getConfig(type);
@@ -123,14 +121,14 @@ const LAYERS = [
   { id: 'sensors',   label: 'Services',  icon: FiMapPin,       color: 'text-blue-400'   },
 ];
 
-/* ── Map re-center helper ────────────────────────────────────────────────────── */
+/* ── Map re-center helper (no remount — just pans the existing map) ─────────── */
 const SetView: React.FC<{ lat: number; lng: number; zoom?: number }> = ({ lat, lng, zoom = 13 }) => {
   const map = useMap();
   const prev = useRef('');
   useEffect(() => {
     const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (key !== prev.current) {
-      map.setView([lat, lng], zoom);
+      map.setView([lat, lng], zoom, { animate: true, duration: 0.8 });
       prev.current = key;
     }
   }, [lat, lng, zoom, map]);
@@ -167,18 +165,28 @@ const SearchBox: React.FC<{
         <FiSearch size={14} className="absolute left-3 text-gray-500" />
         {busy && <FiLoader size={12} className="absolute right-3 animate-spin text-gray-500" />}
         <input value={q}
-          onChange={e => { setQ(e.target.value); if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => search(e.target.value), 420); }}
+          onChange={e => {
+            setQ(e.target.value);
+            if (timer.current) clearTimeout(timer.current);
+            timer.current = setTimeout(() => search(e.target.value), 420);
+          }}
           onFocus={() => sugs.length && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 200)}
           placeholder="Search city, area or location…"
-          className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-9 pr-8 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500/40 transition-all" />
+          className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-9 pr-8 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500/40 transition-all"
+        />
       </div>
       <AnimatePresence>
         {open && sugs.length > 0 && (
           <motion.ul initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
             className="absolute z-[9999] w-full mt-1 glass-card border border-white/10 rounded-xl overflow-hidden shadow-2xl">
             {sugs.map((s, i) => (
-              <li key={i} onMouseDown={() => { onSelect(parseFloat(s.lat), parseFloat(s.lon), s.display_name); setQ(s.display_name.split(',')[0]); setOpen(false); }}
+              <li key={i}
+                onMouseDown={() => {
+                  onSelect(parseFloat(s.lat), parseFloat(s.lon), s.display_name);
+                  setQ(s.display_name.split(',')[0]);
+                  setOpen(false);
+                }}
                 className="px-3 py-2.5 text-xs text-gray-300 hover:bg-white/10 cursor-pointer border-b border-white/5 last:border-0 truncate">
                 <FiMapPin size={9} className="inline mr-1.5 text-cyan-400" />{s.display_name}
               </li>
@@ -195,56 +203,105 @@ const CityMap: React.FC = () => {
   const { authFetch } = useAuth();
   const { data: locData } = useLocCtx();
 
-  const [baseMap,   setBaseMap]   = useState('osm');
-  const [layer,     setLayer]     = useState('all');
-  const [markers,   setMarkers]   = useState<MapMarker[]>([]);
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
-  const [gpsLat,    setGpsLat]    = useState<number | null>(null);
-  const [gpsLng,    setGpsLng]    = useState<number | null>(null);
-  const [gpsLoading,setGpsLoading]= useState(false);
-  const [mapLat,    setMapLat]    = useState(22.5726);
-  const [mapLng,    setMapLng]    = useState(88.3639);
-  const [locationLabel, setLocationLabel] = useState('');
-  const [mapKey, setMapKey] = useState('osm-22.5726-88.3639');
+  const [baseMap,        setBaseMap]        = useState('osm');
+  // mapKey ONLY changes when the tile source changes — not on location change.
+  // Location changes are handled by <SetView> which pans the existing map instance.
+  const [mapKey,         setMapKey]         = useState('osm');
+  const [layer,          setLayer]          = useState('all');
+  const [markers,        setMarkers]        = useState<MapMarker[]>([]);
+  // pendingMarkers holds a newly-fetched result until we're sure it's not stale.
+  const [loading,        setLoading]        = useState(false);
+  const [error,          setError]          = useState('');
+  const [gpsLat,         setGpsLat]         = useState<number | null>(null);
+  const [gpsLng,         setGpsLng]         = useState<number | null>(null);
+  const [gpsLoading,     setGpsLoading]     = useState(false);
+  const [mapLat,         setMapLat]         = useState(22.5726);
+  const [mapLng,         setMapLng]         = useState(88.3639);
+  const [locationLabel,  setLocationLabel]  = useState('');
 
-  // Sync from LocationContext when city searched on dashboard
+  // Track the latest fetch so stale responses from aborted/old requests are ignored.
+  const fetchSeqRef = useRef(0);
+  // AbortController for the current in-flight request.
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Sync from LocationContext when city searched on Dashboard
   useEffect(() => {
     if (locData?.location) {
-      const newLat = locData.location.lat;
-      const newLng = locData.location.lng;
-      setMapLat(newLat);
-      setMapLng(newLng);
+      setMapLat(locData.location.lat);
+      setMapLng(locData.location.lng);
       setLocationLabel(`${locData.location.city}, ${locData.location.state}`);
-      setMapKey(`${baseMap}-${newLat.toFixed(4)}-${newLng.toFixed(4)}`);
     }
+  // Only re-run when the actual coordinates change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locData?.location?.lat, locData?.location?.lng]);
 
   /* ── Fetch markers from backend ─────────────────────────────────────────── */
   const fetchMarkers = useCallback(async (lat: number, lng: number, activeLayer: string) => {
-    setLoading(true); setError('');
+    // Cancel any previous in-flight request
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Increment the sequence counter — only the response with the LATEST
+    // sequence number is allowed to update state.
+    fetchSeqRef.current += 1;
+    const seq = fetchSeqRef.current;
+
+    setLoading(true);
+    setError('');
+
     try {
-      // Try with a 12s timeout — backend caches so second call is instant
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
       const r = await authFetch(
         `/api/map/markers?layer=${activeLayer}&lat=${lat}&lng=${lng}&radius=6000`,
         { signal: controller.signal }
       );
-      clearTimeout(tid);
-      if (!r.ok) { setError('Could not load map data'); return; }
+      clearTimeout(timeoutId);
+
+      // If a newer request has already started, discard this response
+      if (seq !== fetchSeqRef.current) return;
+
+      if (!r.ok) {
+        setError('Could not load map data — please try again.');
+        return;
+      }
+
       const data = await r.json();
-      setMarkers(data.markers || []);
+      const newMarkers: MapMarker[] = data.markers || [];
+
+      // Only commit non-empty results OR the very latest request's empty result.
+      // This prevents a slow empty response from wiping out already-displayed markers.
+      if (seq !== fetchSeqRef.current) return;
+      if (newMarkers.length > 0 || seq === fetchSeqRef.current) {
+        setMarkers(newMarkers);
+      }
     } catch (e: any) {
-      if (e?.name === 'AbortError') setError('Map data timed out — Overpass API is busy. Try again shortly.');
-      else setError('Network error loading map');
+      if (seq !== fetchSeqRef.current) return;
+      if (e?.name === 'AbortError') {
+        // Request was intentionally cancelled — don't show error
+        return;
+      }
+      setError('Network error loading map data. Please check your connection.');
+    } finally {
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+      }
     }
-    finally { setLoading(false); }
   }, [authFetch]);
 
-  // Fetch when location or layer changes
+  // Fetch when location or layer changes — debounced 300 ms so rapid location
+  // updates (e.g. GPS + context both fire) don't send two simultaneous requests.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    fetchMarkers(mapLat, mapLng, layer);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchMarkers(mapLat, mapLng, layer);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [mapLat, mapLng, layer, fetchMarkers]);
 
   /* ── GPS ─────────────────────────────────────────────────────────────────── */
@@ -254,8 +311,10 @@ const CityMap: React.FC = () => {
     navigator.geolocation.getCurrentPosition(
       async pos => {
         const { latitude, longitude } = pos.coords;
-        setGpsLat(latitude); setGpsLng(longitude);
-        setMapLat(latitude); setMapLng(longitude);
+        setGpsLat(latitude);
+        setGpsLng(longitude);
+        setMapLat(latitude);
+        setMapLng(longitude);
         try {
           const r = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
@@ -264,7 +323,9 @@ const CityMap: React.FC = () => {
           const j = await r.json();
           const addr = j.address;
           setLocationLabel(addr.city || addr.town || addr.village || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-        } catch { setLocationLabel(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`); }
+        } catch {
+          setLocationLabel(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+        }
         setGpsLoading(false);
       },
       () => setGpsLoading(false),
@@ -285,7 +346,6 @@ const CityMap: React.FC = () => {
     { label: 'Facilities', count: markers.filter(m => FACILITY_TYPES.includes(m.type)).length,  color: 'text-green-400',  icon: FiShield       },
   ];
 
-  // Group for legend
   const visibleTypes = [...new Set(markers.map(m => m.type))];
 
   return (
@@ -303,11 +363,15 @@ const CityMap: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => fetchMarkers(mapLat, mapLng, layer)} disabled={loading}
+          <button
+            onClick={() => fetchMarkers(mapLat, mapLng, layer)}
+            disabled={loading}
             className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-gray-400 transition-all disabled:opacity-50">
             <FiRefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-          <button onClick={useGPS} disabled={gpsLoading}
+          <button
+            onClick={useGPS}
+            disabled={gpsLoading}
             className="flex items-center gap-2 px-4 py-2.5 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-400 rounded-xl text-sm font-semibold transition-all disabled:opacity-50">
             {gpsLoading ? <FiLoader size={14} className="animate-spin" /> : <FiCrosshair size={14} />}
             {gpsLoading ? 'Getting GPS…' : 'My Location'}
@@ -328,19 +392,19 @@ const CityMap: React.FC = () => {
 
       {/* ── Controls row ── */}
       <div className="glass-card p-4 space-y-3">
-        {/* Search */}
         <SearchBox onSelect={(lat, lng, name) => {
-          setMapLat(lat); setMapLng(lng);
+          setMapLat(lat);
+          setMapLng(lng);
           setLocationLabel(name.split(',')[0]);
         }} />
 
         <div className="flex flex-col sm:flex-row gap-3">
-          {/* Base map selector */}
+          {/* Base map selector — mapKey only changes here, so the map never remounts on location change */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Map:</span>
             {BASE_MAPS.map(bm => (
               <button key={bm.id}
-                onClick={() => { setBaseMap(bm.id); setMapKey(`${bm.id}-${mapLat.toFixed(4)}-${mapLng.toFixed(4)}`); }}
+                onClick={() => { setBaseMap(bm.id); setMapKey(bm.id); }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
                   baseMap === bm.id
                     ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
@@ -369,15 +433,29 @@ const CityMap: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Error ── */}
+      {/* ── Error banner ── */}
       <AnimatePresence>
         {error && (
           <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
             className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-            <FiAlertCircle size={14} /> {error}
+            <FiAlertCircle size={14} />
+            {error}
+            <button
+              onClick={() => fetchMarkers(mapLat, mapLng, layer)}
+              className="ml-auto text-xs underline hover:no-underline">
+              Retry
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Loading overlay hint */}
+      {loading && markers.length === 0 && (
+        <div className="flex items-center justify-center gap-2 py-2 text-xs text-gray-500">
+          <FiLoader size={12} className="animate-spin" />
+          Loading map data from OpenStreetMap…
+        </div>
+      )}
 
       {/* ── Map ── */}
       <div className="glass-card overflow-hidden" style={{ height: 'clamp(320px, 55vw, 580px)' }}>
@@ -389,33 +467,36 @@ const CityMap: React.FC = () => {
           scrollWheelZoom={true}
           zoomControl={true}
         >
-          {/* Base tile layer */}
+          {/* Base tile layer — switches without remounting the MapContainer */}
           {BASE_MAPS.map(bm => (
             baseMap === bm.id && (
               <TileLayer key={bm.id} url={bm.url} attribution={bm.attribution} />
             )
           ))}
 
-          {/* Re-center when location changes */}
+          {/* Smooth pan to new location without remounting */}
           <SetView lat={mapLat} lng={mapLng} zoom={13} />
 
           {/* GPS position */}
           {gpsLat && gpsLng && (
-            <Marker position={[gpsLat, gpsLng]} icon={GPS_ICON}>
-              <Popup>
-                <div className="text-xs">
-                  <p className="font-bold">📍 Your Location</p>
-                  <p className="text-gray-500">{gpsLat.toFixed(5)}, {gpsLng.toFixed(5)}</p>
-                </div>
-              </Popup>
-            </Marker>
-          )}
-          {gpsLat && gpsLng && (
-            <Circle center={[gpsLat, gpsLng]} radius={8000}
-              pathOptions={{ color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.04, weight: 1, dashArray: '5,8' }} />
+            <>
+              <Marker position={[gpsLat, gpsLng]} icon={GPS_ICON}>
+                <Popup>
+                  <div className="text-xs">
+                    <p className="font-bold">📍 Your Location</p>
+                    <p className="text-gray-500">{gpsLat.toFixed(5)}, {gpsLng.toFixed(5)}</p>
+                  </div>
+                </Popup>
+              </Marker>
+              <Circle
+                center={[gpsLat, gpsLng]}
+                radius={8000}
+                pathOptions={{ color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.04, weight: 1, dashArray: '5,8' }}
+              />
+            </>
           )}
 
-          {/* Data markers */}
+          {/* Data markers — stable keys prevent flicker on re-render */}
           {markers.map(m => {
             const icon = makeIcon(m.type);
             const cfg  = getConfig(m.type);
@@ -460,7 +541,7 @@ const CityMap: React.FC = () => {
           </h3>
           <div className="flex flex-wrap gap-3">
             {visibleTypes.map(type => {
-              const cfg = getConfig(type);
+              const cfg   = getConfig(type);
               const count = markers.filter(m => m.type === type).length;
               return (
                 <div key={type} className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
@@ -480,14 +561,19 @@ const CityMap: React.FC = () => {
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty state — only shown after load completes with zero results */}
       {!loading && markers.length === 0 && !error && (
         <div className="glass-card p-10 text-center">
           <FiMapPin size={36} className="mx-auto mb-3 text-gray-600" />
-          <p className="text-white font-semibold">No data in this area</p>
+          <p className="text-white font-semibold">No data found for this area</p>
           <p className="text-sm text-gray-500 mt-1">
-            Try searching a different city or use "My Location" for real nearby facilities.
+            Overpass API may be busy. Try refreshing or search a major city.
           </p>
+          <button
+            onClick={() => fetchMarkers(mapLat, mapLng, layer)}
+            className="mt-4 px-4 py-2 bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 rounded-xl text-sm hover:bg-cyan-500/25 transition-all">
+            <FiRefreshCw size={13} className="inline mr-1.5" /> Try Again
+          </button>
         </div>
       )}
     </div>

@@ -133,7 +133,10 @@ async def _fetch_overpass_parallel(lat: float, lng: float, layer: str, radius_m:
                 markers.append(m)
 
     markers.sort(key=lambda m: _haversine_km(lat, lng, m.lat, m.lng))
-    _map_cache[cache_key] = (markers, time.time())
+    # Only cache non-empty results — caching an empty list would suppress
+    # real data for 10 minutes if Overpass was temporarily unreachable.
+    if markers:
+        _map_cache[cache_key] = (markers, time.time())
     return markers
 
 
