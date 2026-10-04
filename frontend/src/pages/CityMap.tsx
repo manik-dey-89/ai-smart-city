@@ -223,6 +223,95 @@ const CityMap: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locData?.location?.lat, locData?.location?.lng]);
 
+  /* ── Direct Overpass fallback (browser → Overpass when backend returns 0) ── */
+  const fetchOverpassDirect = useCallback(async (
+    lat: number, lng: number, layer: string
+  ): Promise<MapMarker[]> => {
+    const AMENITY_GROUPS: Record<string, string[][]> = {
+      emergency: [["hospital", "clinic", "pharmacy", "fire_station", "police"]],
+      traffic:   [["fuel", "bus_station", "parking"]],
+      sensors:   [["bank", "atm", "school", "post_office", "supermarket"]],
+    };
+    const groups = layer === 'all'
+      ? [...AMENITY_GROUPS.emergency, ...AMENITY_GROUPS.traffic, ...AMENITY_GROUPS.sensors]
+      : (AMENITY_GROUPS[layer] || AMENITY_GROUPS.emergency);
+
+    const AMENITY_TYPE: Record<string, string> = {
+      hospital: 'hospital', clinic: 'clinic', pharmacy: 'pharmacy',
+      fire_station: 'fire', police: 'police',
+      fuel: 'fuel', bus_station: 'bus_stop', parking: 'parking',
+      bank: 'bank', atm: 'atm', school: 'school',
+      post_office: 'post_office', supermarket: 'supermarket',
+    };
+
+    const MIRRORS = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ];
+
+    const fetchGroup = async (amenities: string[]): Promise<MapMarker[]> => {
+      const parts = amenities.flatMap(a => [
+        `node["amenity"="${a}"](around:6000,${lat},${lng});`,
+        `way["amenity"="${a}"](around:6000,${lat},${lng});`,
+      ]);
+      const query = `[out:json][timeout:20];\n(\n  ${parts.join('\n  ')}\n);\nout center 20;`;
+      const body = `data=${encodeURIComponent(query)}`;
+
+      for (const mirror of MIRRORS) {
+        try {
+          const resp = await fetch(mirror, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+            signal: AbortSignal.timeout(25000),
+          });
+          if (!resp.ok) continue;
+          const json = await resp.json();
+          return (json.elements || []).flatMap((el: any) => {
+            const tags = el.tags || {};
+            const amenity = tags.amenity || '';
+            if (!amenity) return [];
+            const elLat = el.lat ?? el.center?.lat;
+            const elLng = el.lon ?? el.center?.lon;
+            if (!elLat || !elLng) return [];
+            const dist = Math.round(Math.sqrt(
+              Math.pow((elLat - lat) * 111320, 2) +
+              Math.pow((elLng - lng) * 111320 * Math.cos(lat * Math.PI / 180), 2)
+            ));
+            const phone = tags.phone || tags['contact:phone'] || '';
+            const name = tags.name || tags['name:en'] || amenity.replace(/_/g, ' ')
+              .replace(/\b\w/g, (c: string) => c.toUpperCase());
+            return [{
+              id: `osm-direct-${el.id}-${amenity.slice(0, 6)}`,
+              type: AMENITY_TYPE[amenity] || 'place',
+              lat: Math.round(elLat * 1e6) / 1e6,
+              lng: Math.round(elLng * 1e6) / 1e6,
+              name,
+              status: `${(dist / 1000).toFixed(2)} km away${phone ? ` · ${phone}` : ''}`,
+            } as MapMarker];
+          });
+        } catch { continue; }
+      }
+      return [];
+    };
+
+    const results = await Promise.allSettled(groups.map(fetchGroup));
+    const seen = new Set<string>();
+    const markers: MapMarker[] = [];
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue;
+      for (const m of r.value) {
+        const key = `${m.name.slice(0, 20)}_${m.lat.toFixed(3)}_${m.lng.toFixed(3)}`;
+        if (!seen.has(key)) { seen.add(key); markers.push(m); }
+      }
+    }
+    return markers.sort((a, b) => {
+      const da = parseFloat(a.status?.split(' ')[0] || '99');
+      const db2 = parseFloat(b.status?.split(' ')[0] || '99');
+      return da - db2;
+    });
+  }, []);
+
   /* ── Core fetch logic ────────────────────────────────────────────────────── */
   const fetchAll = useCallback(async (lat: number, lng: number, activeLayer: string) => {
     // ── Cancel any in-flight requests from a previous location ──
@@ -284,12 +373,37 @@ const CityMap: React.FC = () => {
 
       if (p2Seq !== p2SeqRef.current) return;
 
-      // Merge: if full response is non-empty use it; otherwise keep DB markers
       if (fullMarkers.length > 0) {
+        // Backend returned OSM data — use it
         setMarkers(fullMarkers);
+        setOsmLoaded(true);
+        setError('');
+      } else {
+        // Backend returned 0 OSM markers (Overpass timeout/blocked on server).
+        // Fall back to querying Overpass directly from the browser.
+        try {
+          const directMarkers = await fetchOverpassDirect(lat, lng, activeLayer);
+          if (p2Seq !== p2SeqRef.current) return;
+          if (directMarkers.length > 0) {
+            // Merge direct Overpass results with any DB markers already shown
+            setMarkers(prev => {
+              const dbOnly = prev.filter(m =>
+                m.id.startsWith('em-') || m.id.startsWith('cmp-') || m.id.startsWith('ti-')
+              );
+              const seen = new Set(dbOnly.map(m => m.id));
+              const merged = [...dbOnly];
+              for (const m of directMarkers) {
+                if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); }
+              }
+              return merged;
+            });
+          }
+          setOsmLoaded(true);
+          setError('');
+        } catch {
+          setOsmLoaded(true); // still show whatever DB markers we have
+        }
       }
-      setOsmLoaded(true);
-      setError('');
     } catch (e: any) {
       if (e?.name === 'AbortError') return;
       if (p2Seq === p2SeqRef.current) {
