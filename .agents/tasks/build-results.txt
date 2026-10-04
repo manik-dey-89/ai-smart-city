@@ -1,0 +1,22 @@
+Build Results — Pre-Deployment Audit
+======================================
+Date: 2026-10-04 19:00:22
+
+TypeScript check (npx tsc --noEmit):
+  Exit code: 0 — PASS (no TypeScript errors)
+
+Production build (npm run build):
+  Exit code: 0 — PASS
+
+Vite output:
+  dist/index.html                           2.08 kB ¦ gzip:   0.87 kB
+  dist/assets/index-CbgxXJPZ.css           65.85 kB ¦ gzip:  15.92 kB
+  dist/assets/vendor-icons-CRPTYIWL.js      2.46 kB ¦ gzip:   1.08 kB
+  dist/assets/vendor-motion-rGXd3RB3.js   115.11 kB ¦ gzip:  38.21 kB
+  dist/assets/vendor-charts-DhQhLOIZ.js   154.49 kB ¦ gzip:  54.41 kB
+  dist/assets/vendor-leaflet-DvSQTVOy.js  155.13 kB ¦ gzip:  45.31 kB
+  dist/assets/vendor-react-DdmzM3ig.js    162.98 kB ¦ gzip:  53.24 kB
+  dist/assets/index-D5rxyOw1.js           535.19 kB ¦ gzip: 108.77 kB
+  Built in 3.63s — 486 modules transformed
+
+All tasks completed successfully. No errors found.
