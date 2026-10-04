@@ -1,8 +1,9 @@
 import axios from 'axios';
 
-// Falls back to relative /api for Docker/local (nginx proxy).
-// Set VITE_API_BASE_URL for deployments where frontend and backend are separate services.
-const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api';
+// VITE_API_BASE_URL = bare backend origin, e.g. https://backend.onrender.com
+// We add /api ourselves. Falls back to /api for Docker/local (nginx proxy).
+const _raw = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') || '';
+const apiBase = _raw ? `${_raw}/api` : '/api';
 
 const api = axios.create({
   baseURL: apiBase,

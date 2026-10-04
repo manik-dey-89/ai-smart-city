@@ -1,11 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthState } from '../types';
 
-// In Docker / local dev, nginx proxies /api → backend so relative path works.
-// On Render (static site + separate web service), set VITE_API_BASE_URL to
-// the deployed backend URL, e.g. https://ai-smart-city-api.onrender.com/api
-// Leave unset (or empty) and it falls back to the relative path for Docker/local.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api';
+// VITE_API_BASE_URL should be set to the bare backend origin on Render, e.g.:
+//   https://ai-smart-city-api.onrender.com
+// Do NOT include a trailing slash or /api — we add paths ourselves.
+// Leave unset for Docker/local where nginx proxies /api on the same origin.
+const _raw = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') || '';
+
+// API_BASE_URL is used by direct fetch() calls in auth (login, register, etc.)
+// These paths do NOT start with /api — they use /auth/login etc.
+// So we append /api here to match the backend router prefix.
+const API_BASE_URL = _raw ? `${_raw}/api` : '/api';
+
+// BACKEND_ORIGIN is used by authFetch() which receives full paths like /api/citizen/...
+// We strip /api from the base so paths are not doubled.
+const BACKEND_ORIGIN = _raw; // e.g. "https://backend.onrender.com" or "" for local
 
 interface AuthContextType {
   user: User | null;
@@ -132,7 +141,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const authFetch = async (url: string, options: RequestInit = {}) => {
-    // Helper to add headers
+    // Resolve URL: if we have a backend origin and the path is relative (starts with /)
+    // prepend it so the request reaches the deployed backend, not the frontend's nginx.
+    const resolvedUrl = BACKEND_ORIGIN && url.startsWith('/') ? `${BACKEND_ORIGIN}${url}` : url;
+
+    // Helper to add auth header
     const addAuthHeader = (headers: HeadersInit = {}) => {
       const newHeaders = new Headers(headers);
       if (authState.token) {
@@ -142,7 +155,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     // First attempt
-    let response = await fetch(url, {
+    let response = await fetch(resolvedUrl, {
       ...options,
       headers: addAuthHeader(options.headers),
     });
@@ -151,13 +164,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (response.status === 401) {
       try {
         await refreshAccessToken();
-        // Retry with new token
-        response = await fetch(url, {
+        response = await fetch(resolvedUrl, {
           ...options,
           headers: addAuthHeader(options.headers),
         });
       } catch (refreshError) {
-        // Refresh failed, logout and throw
         await logout();
         throw refreshError;
       }
