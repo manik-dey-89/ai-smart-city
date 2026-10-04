@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthState } from '../types';
 
-const API_BASE_URL = '/api';
+// In Docker / local dev, nginx proxies /api → backend so relative path works.
+// On Render (static site + separate web service), set VITE_API_BASE_URL to
+// the deployed backend URL, e.g. https://ai-smart-city-api.onrender.com/api
+// Leave unset (or empty) and it falls back to the relative path for Docker/local.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api';
 
 interface AuthContextType {
   user: User | null;

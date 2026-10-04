@@ -9,7 +9,7 @@ class BaseSchema(BaseModel):
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-    status: str
+    status: Optional[str] = None          # Optional — not every model has a status column
     created_by: Optional[str] = None
 
     class Config:
@@ -48,7 +48,7 @@ class UserResponse(UserBase):
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-    status: str
+    status: Optional[str] = "active"      # User model has no status column; default to active
     is_active: bool
     is_verified: bool
     roles: List[RoleSimpleResponse] = []

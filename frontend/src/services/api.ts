@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// Falls back to relative /api for Docker/local (nginx proxy).
+// Set VITE_API_BASE_URL for deployments where frontend and backend are separate services.
+const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: apiBase,
   headers: {
     'Content-Type': 'application/json',
   },
