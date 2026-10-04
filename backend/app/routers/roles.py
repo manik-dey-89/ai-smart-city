@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Role, Permission, RolePermission, UserRole
 from ..schemas import RoleCreate, RoleResponse, PermissionCreate, PermissionResponse
-from ..dependencies import require_permissions, get_current_super_admin
+from ..dependencies import require_permissions, get_current_super_admin, get_current_admin_user
 from ..security import get_password_hash, validate_password_strength
 from ..models import User
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/roles", tags=["roles"])
 
 @router.get("/", response_model=List[RoleResponse])
 def list_roles(
-    current_user: User = Depends(require_permissions(["roles:read"])),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """List all roles."""
@@ -25,7 +25,7 @@ def list_roles(
 @router.get("/{role_id}", response_model=RoleResponse)
 def get_role(
     role_id: str,
-    current_user: User = Depends(require_permissions(["roles:read"])),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """Get a specific role by ID."""
@@ -169,15 +169,13 @@ router_permissions = APIRouter(prefix="/api/permissions", tags=["permissions"])
 @router_permissions.get("/", response_model=List[PermissionResponse])
 def list_permissions(
     resource: str = None,
-    current_user: User = Depends(require_permissions(["permissions:read"])),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
-    """List all permissions, optionally filtered by resource."""
+    """List all permissions — accessible to any admin role."""
     query = db.query(Permission)
-    
     if resource:
         query = query.filter(Permission.resource == resource)
-    
     permissions = query.all()
     return permissions
 
@@ -185,7 +183,7 @@ def list_permissions(
 @router_permissions.get("/{permission_id}", response_model=PermissionResponse)
 def get_permission(
     permission_id: str,
-    current_user: User = Depends(require_permissions(["permissions:read"])),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """Get a specific permission by ID."""
@@ -198,7 +196,7 @@ def get_permission(
 @router_permissions.post("/", response_model=PermissionResponse)
 def create_permission(
     permission_data: PermissionCreate,
-    current_user: User = Depends(require_permissions(["permissions:create"])),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db)
 ):
     """Create a new permission."""

@@ -28,6 +28,10 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation as useLocCtx } from '../contexts/LocationContext';
 
+// Detect if running on a deployed domain where VITE_API_BASE_URL must be set
+const _isDeployedDomain = !['localhost', '127.0.0.1'].includes(window.location.hostname);
+const _backendConfigured = Boolean((import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim());
+
 /* ── Leaflet icon fix ───────────────────────────────────────────────────────── */
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -392,6 +396,21 @@ const CityMap: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* ── Config warning (deploy without VITE_API_BASE_URL set) ── */}
+      {_isDeployedDomain && !_backendConfigured && (
+        <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-yellow-300 text-sm">
+          <FiAlertCircle size={16} className="shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Backend URL not configured</p>
+            <p className="text-xs text-yellow-400/80 mt-0.5">
+              Set <code className="bg-yellow-500/20 px-1 rounded">VITE_API_BASE_URL</code> as an environment variable on your Render Static Site
+              (e.g. <code className="bg-yellow-500/20 px-1 rounded">https://your-backend.onrender.com</code>) and redeploy.
+              Map data cannot load without this.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Stats ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

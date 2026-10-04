@@ -28,6 +28,8 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   loading: boolean;
   authFetch: (url: string, options?: RequestInit) => Promise<Response>;
+  /** Bare backend origin for non-authFetch callers. Empty string = same origin (Docker/local). */
+  backendOrigin: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -223,7 +225,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ ...authState, login, logout, register, refreshAccessToken, refreshUser, loading, authFetch }}>
+    <AuthContext.Provider value={{ ...authState, login, logout, register, refreshAccessToken, refreshUser, loading, authFetch, backendOrigin: BACKEND_ORIGIN }}>
       {children}
     </AuthContext.Provider>
   );
