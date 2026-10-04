@@ -230,55 +230,112 @@ const Emergency: React.FC = () => {
     setSosStep('idle'); setSelectedCat(null); setSosDescription(''); setSosError('');
   };
 
-  /* ── Fetch nearby via backend (cached Overpass) ──────────────────────── */
+  /* ── Fetch nearby: backend first, Overpass direct as fallback ───────── */
   const fetchNearby = useCallback(async (lat: number, lng: number, amenity: string) => {
     setNearbyLoading(true);
     const typeInfo = NEARBY_TYPES.find(t => t.amenity === amenity)!;
-    try {
-      // Map amenity to layer
-      const layerMap: Record<string, string> = {
-        hospital:     'emergency',
-        police:       'emergency',
-        fire_station: 'emergency',
-        pharmacy:     'emergency',
-      };
-      const layer = layerMap[amenity] || 'sensors';
 
-      // Use backend /api/map/markers — has 10-min cache, much faster than raw Overpass
-      const r = await authFetch(
-        `/api/map/markers?layer=${layer}&lat=${lat}&lng=${lng}&radius=5000`
-      );
-      if (!r.ok) { setNearby([]); return; }
-      const data = await r.json();
-      const markers: any[] = (data.markers || []);
-
-      // Filter to the requested amenity type
+    /** Convert raw backend/Overpass elements into NearbyFacility[] */
+    const buildList = (rawMarkers: any[], sourceType: 'backend' | 'overpass'): NearbyFacility[] => {
       const typeMap: Record<string, string> = {
         hospital: 'hospital', police: 'police',
         fire_station: 'fire', pharmacy: 'pharmacy',
       };
       const targetType = typeMap[amenity] || amenity;
 
-      const list: NearbyFacility[] = markers
-        .filter((m: any) => m.type === targetType)
-        .slice(0, 6)
-        .map((m: any) => {
-          const distM = haversineM(lat, lng, m.lat, m.lng);
-          const parts = (m.status || '').split(' · ');
-          const phone = parts.find((p: string) => p.startsWith('+') || /^\d{3}/.test(p)) || '';
-          return {
-            name:      m.name || typeInfo.label,
-            type:      typeInfo.label.slice(0, -1),
-            amenity,
-            distance:  fmtDist(distM),
-            distanceM: distM,
-            phone,
-            address:   '',
-            lat: m.lat, lng: m.lng,
-            color: typeInfo.color, icon: typeInfo.icon,
-          };
-        })
-        .sort((a, b) => a.distanceM - b.distanceM);
+      if (sourceType === 'backend') {
+        return rawMarkers
+          .filter((m: any) => m.type === targetType)
+          .map((m: any) => {
+            const distM = haversineM(lat, lng, m.lat, m.lng);
+            // Phone: only accept strings that look like a real phone (start with + or have 5+ digits)
+            const parts = (m.status || '').split(' · ');
+            const phone = parts.find((p: string) =>
+              p.startsWith('+') || /^\+?\d[\d\s\-]{4,}/.test(p)
+            ) || '';
+            return {
+              name: m.name || typeInfo.label,
+              type: typeInfo.label.replace(/s$/, ''),
+              amenity,
+              distance: fmtDist(distM),
+              distanceM: distM,
+              phone,
+              address: '',
+              lat: m.lat, lng: m.lng,
+              color: typeInfo.color, icon: typeInfo.icon,
+            };
+          })
+          .sort((a, b) => a.distanceM - b.distanceM)
+          .slice(0, 6);
+      } else {
+        // Overpass elements
+        return rawMarkers
+          .map((el: any) => {
+            const tags  = el.tags || {};
+            const elLat = el.lat ?? el.center?.lat ?? lat;
+            const elLng = el.lon ?? el.center?.lon ?? lng;
+            const distM = haversineM(lat, lng, elLat, elLng);
+            const name  = tags.name || tags['name:en'] || typeInfo.label.replace(/s$/, '');
+            const phone = tags.phone || tags['contact:phone'] || tags['contact:mobile'] || '';
+            return {
+              name,
+              type: typeInfo.label.replace(/s$/, ''),
+              amenity,
+              distance: fmtDist(distM),
+              distanceM: distM,
+              phone,
+              address: [tags['addr:street'], tags['addr:city']].filter(Boolean).join(', '),
+              lat: elLat, lng: elLng,
+              color: typeInfo.color, icon: typeInfo.icon,
+            };
+          })
+          .sort((a, b) => a.distanceM - b.distanceM)
+          .slice(0, 6);
+      }
+    };
+
+    /** Direct Overpass query (browser → Overpass, bypasses backend) */
+    const queryOverpassDirect = async (): Promise<NearbyFacility[]> => {
+      const radius = 5000;
+      const query = `[out:json][timeout:20];
+(
+  node["amenity"="${amenity}"](around:${radius},${lat},${lng});
+  way["amenity"="${amenity}"](around:${radius},${lat},${lng});
+);
+out center 15;`;
+      const resp = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+      if (!resp.ok) return [];
+      const json = await resp.json();
+      return buildList(json.elements || [], 'overpass');
+    };
+
+    try {
+      // 1. Try backend (cached, fast)
+      const layerMap: Record<string, string> = {
+        hospital: 'emergency', police: 'emergency',
+        fire_station: 'emergency', pharmacy: 'emergency',
+      };
+      const layer = layerMap[amenity] || 'sensors';
+
+      let list: NearbyFacility[] = [];
+      try {
+        const r = await authFetch(
+          `/api/map/markers?layer=${layer}&lat=${lat}&lng=${lng}&radius=5000`
+        );
+        if (r.ok) {
+          const data = await r.json();
+          list = buildList(data.markers || [], 'backend');
+        }
+      } catch { /* backend unavailable — fall through */ }
+
+      // 2. If backend returned nothing, query Overpass directly from browser
+      if (list.length === 0) {
+        list = await queryOverpassDirect();
+      }
 
       setNearby(list);
     } catch { setNearby([]); }
@@ -696,13 +753,13 @@ const Emergency: React.FC = () => {
 
               {nearbyLoading && (
                 <div className="py-6 text-center text-gray-600 text-xs flex items-center justify-center gap-2">
-                  <FiLoader size={14} className="animate-spin" /> Searching Overpass API…
+                  <FiLoader size={14} className="animate-spin" /> Searching nearby {NEARBY_TYPES.find(t=>t.amenity===activeNearbyType)?.label.toLowerCase()}…
                 </div>
               )}
               {!nearbyLoading && nearbyFetched && nearby.length === 0 && (
                 <div className="py-6 text-center text-gray-600 text-xs">
                   <p>No {NEARBY_TYPES.find(t=>t.amenity===activeNearbyType)?.label.toLowerCase()} found within 5 km.</p>
-                  <p className="mt-1 text-gray-700">Data from OpenStreetMap — coverage may vary.</p>
+                  <p className="mt-1 text-gray-700">Try enabling GPS for your exact location, or check your connection.</p>
                 </div>
               )}
 
