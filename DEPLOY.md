@@ -99,9 +99,24 @@ docker compose build && docker compose up -d --no-deps backend frontend
 1. Create a new **Web Service** → connect your GitHub repo.
 2. Set **Root Directory** to `backend`.
 3. **Build command:** `pip install -r requirements.txt`
-4. **Start command:** `uvicorn main:app --host 0.0.0.0 --port 8000`
+4. **Start command:** `bash start.sh`
+   - `start.sh` runs `seed.py` (idempotent — skips existing users) then launches uvicorn.
+   - This is how default users are created on the free plan (no Shell access needed).
 5. Add environment variables (from section 2a) in the Render dashboard.
 6. Note the deployed URL (e.g. `https://smartcity-api.onrender.com`).
+
+> **Default credentials created automatically on first deploy:**
+>
+> | Username | Password | Role |
+> |----------|----------|------|
+> | `admin` | `Admin@1234` | Admin panel |
+> | `citizen` | `Citizen@1234` | Citizen panel |
+> | `police` | `Police@1234` | Police panel |
+> | `fire` | `Fire@1234` | Fire service panel |
+> | `traffic` | `Traffic@1234` | Traffic officer |
+> | `emergency` | `Emergency@1234` | Emergency responder |
+>
+> Change these passwords after first login.
 
 ### Frontend (Static Site)
 
@@ -109,7 +124,9 @@ docker compose build && docker compose up -d --no-deps backend frontend
 2. Set **Root Directory** to `frontend`.
 3. **Build command:** `npm ci && npm run build`
 4. **Publish directory:** `dist`
-5. Add environment variable: `VITE_GOOGLE_CLIENT_ID=your-client-id`
+5. Add environment variables:
+   - `VITE_API_BASE_URL` = `https://your-backend.onrender.com` (**bare origin — no `/api` suffix**)
+   - `VITE_GOOGLE_CLIENT_ID` = your Google OAuth client ID (optional)
 6. Add a redirect rule: source `/*`, destination `/index.html`, type **Rewrite**.
 
 ### Update CORS
